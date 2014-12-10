@@ -1,0 +1,5 @@
+#!/bin/sh
+#
+# Verify the product user exists or create one
+#
+

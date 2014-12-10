@@ -1,0 +1,206 @@
+#!/bin/sh
+
+CAPLIN_HOME="/opt/caplin"
+TOMCAT_LINK="/opt/caplin-tomcat"
+CAPLIN_GUI_CLNT="/opt/caplin-gui-client"
+PKG_STORE="/opt/caplin-pkgs"
+
+DFW="$CAPLIN_HOME/dfw"
+
+AF_CAPLIN_SAN="caplin-releases/com/santander"
+
+CAPLIN_USER="baxter:baxter"
+
+echoDebug() {
+	echo "[DEBUG] $1"
+}
+
+echoInfo() {
+	echo "[INFO ] $1"
+}
+
+echoWarn() {
+	echo "[WARN ] $1"
+}
+
+startCaplin() {
+	echoInfo "Starting the Caplin..."
+	$DFW start
+	$TOMCAT_LINK/bin/startup.sh
+	echoDebug "Caplin has been started"
+}
+
+stopCaplin() {
+	echoInfo "Stopping the Caplin..."
+	$TOMCAT_LINK/bin/shutdown.sh
+	$DFW stop
+	echoDebug "Caplin has been stopped"
+}
+
+statusCaplin() {
+	$DFW status
+}
+
+installTomcat() {
+	if [ ! -d $CAPLIN_GUI_CLNT ]; then
+		echoInfo "Caplin GUI Directory $CAPLIN_GUI_CLNT not found. Creating one..."
+		mkdir $CAPLIN_GUI_CLNT
+	fi 
+	if [ "x" == "x$TOMCAT_VERSION" ]; then
+		TOMCAT_VERSION="7.0.57"
+	fi
+	TOMCAT_MAJOR_VERSION="$(echo $TOMCAT_VERSION | cut -d. -f1)"
+	TOMCAT_NAME="apache-tomcat-$TOMCAT_VERSION"
+	TOMCAT_TARGZ="$TOMCAT_NAME.tar.gz"
+	TOMCAT_MIRROR_URL="http://www.eu.apache.org/dist/tomcat/tomcat-$TOMCAT_MAJOR_VERSION/v$TOMCAT_VERSION/bin/$TOMCAT_TARGZ"
+	TOMCAT_HOME="$CAPLIN_GUI_CLNT/$TOMCAT_NAME"
+	if [ -d $TOMCAT_HOME ]; then
+		echoWarn "Tomcat directory $TOMCAT_HOME found. Cleaning it up..."
+		rm -frv $TOMCAT_HOME/webapps/santandertrader*
+		echoDebug "Tomcat has been cleaned" 
+	else
+		TOMCAT_TARGZ_FILE="$PKG_STORE/$TOMCAT_TARGZ"
+		if [ -f $TOMCAT_TARGZ_FILE ]; then
+			echoDebug "Using the cached file $TOMCAT_TARGZ_FILE" 
+		else
+			echoInfo "Downloading $TOMCAT_MIRROR_URL..."
+			curl -s -o $TOMCAT_TARGZ_FILE $TOMCAT_MIRROR_URL
+		fi
+		echoDebug "Extracting Tomcat..." 
+		tar xzf $TOMCAT_TARGZ_FILE -C $CAPLIN_GUI_CLNT
+		chown -R $CAPLIN_USER $TOMCAT_HOME
+	fi
+	if [ ! -d $TOMCAT_LINK ]; then
+		echoDebug "Creating Tomcat link at $TOMCAT_LINK..."  
+		ln -sv $TOMCAT_HOME $TOMCAT_LINK
+	fi
+}
+
+latestCaplinVersionInAF() {
+	artifactory-info "$AF_CAPLIN_SAN/sgbm-caplin-adapters" | grep '"uri"' | sort -r | while read ll; do
+		VERSION="$(echo $ll | cut -d: -f2,3 | cut -d\" -f2 | cut -d/ -f2)" # This is an artifactId?
+		if [[ "$VERSION" =~ ^([0-9]+(\.[0-9]+)*)-[0-9]+$ ]]; then
+			echo "$VERSION"
+			return 0
+		fi
+	done
+	return 1
+}
+
+cleanPackageCache() {
+	echoInfo "Cleaning old cache..."
+	for r in $(ls  $PKG_STORE/*.* | grep -v "$CAPLIN_VERSION" -v "apache-tomcat"); do
+		rm -fv $r
+	done
+}
+
+getCaplinFileFromAF() {
+	F="$1-$CAPLIN_VERSION$2"
+	if [ -f $PKG_STORE/$F ]; then
+		echoDebug "File $F already cached"
+	else
+		echoInfo "Downloading $1 ..."
+		artifactory-download $AF_CAPLIN_SAN/$1/$CAPLIN_VERSION/$F > $PKG_STORE/$F  
+	fi
+}
+
+deployToTomcat() {
+	echoInfo "Deploying Tomcat configuration..."
+	getCaplinFileFromAF santandertrader-dev-conf ".tar.gz"
+	rm -frv $PKG_STORE/santandertrader-dev-conf
+	tar vxzf $PKG_STORE/santandertrader-dev-conf-$CAPLIN_VERSION.tar.gz -C $PKG_STORE
+	cp -frv $PKG_STORE/santandertrader-dev-conf/tomcat/* $TOMCAT_HOME/conf
+	TOMCAT_SAN_XML="$TOMCAT_HOME/conf/Catalina/localhost/santandertrader.xml"
+	echoWarn "Some abracadabra around the $TOMCAT_SAN_XML..."
+	MYADDR="$(hostname --ip-address)"
+	for ADDR in $(cat $TOMCAT_SAN_XML | grep ADDRESS | cut -d' ' -f3 | cut -d\" -f2); do
+		echoDebug "Replacing $ADDR with $MYADDR"
+		sed -i "s/$ADDR/$MYADDR/g" $TOMCAT_SAN_XML  
+	done
+	echoInfo "Deploying WAR..."
+	getCaplinFileFromAF santandertrader-war ".tar.gz"
+	rm -frv $PKG_STORE/santandertrader-war
+	tar vxzf $PKG_STORE/santandertrader-war-$CAPLIN_VERSION.tar.gz -C $PKG_STORE
+	cp -frv $PKG_STORE/santandertrader-war/* $TOMCAT_HOME/webapps
+}
+
+configureCaplin() {
+	echoInfo "Doing more Caplin configuration..."
+	$DFW hosts all localhost localhost
+	$DFW java "$(find $(cd $(dirname $(readlink -f $(which java)))/..;pwd) -name libjvm.so)"
+}
+
+applyCaplinLicense() {
+	CAPLIN_LIC_DIR="$CAPLIN_HOME/global_config/licenses"
+	echoInfo "Applying the licenses to $CAPLIN_LIC_DIR ..."
+	LICENSE_TARGZ="$PKG_STORE/license.tar.gz"
+	rm -f $LICENSE_TARGZ
+	artifactory-download "caplin-releases/com/caplin/caplin-license.tar.gz" > $LICENSE_TARGZ
+	if [ ! -d $CAPLIN_LIC_DIR ]; then
+		echoDebug "Creating Caplin licenses directory $CAPLIN_LIC_DIR..."
+		mkdir -p $CAPLIN_LIC_DIR
+	fi
+	tar vxzf $LICENSE_TARGZ -C $CAPLIN_LIC_DIR
+}
+
+installCaplin() {
+	echoInfo "Installing the Caplin..."
+	if [ ! -d $PKG_STORE ]; then
+		echoInfo "Creating packages cache at $PKG_STORE" 
+		mkdir $PKG_STORE
+	fi
+	installTomcat
+	if [ "x$CAPLIN_VERSION" == "x" ]; then
+		echoDebug "Detecting latest Caplin version..."
+		CAPLIN_VERSION="$(latestCaplinVersionInAF)"
+	fi
+	echoDebug "Caplin version: $CAPLIN_VERSION"
+	export CAPLIN_VERSION
+	cleanPackageCache
+	getCaplinFileFromAF sgbm-caplin-adapters "-x86_64.rpm"
+	getCaplinFileFromAF sgbm-caplin-deploymentframework "-x86_64.rpm"
+	getCaplinFileFromAF sgbm-caplin-liberator "-x86_64.rpm"
+	echoInfo "Installing Caplin packages..."
+	yum install -y $PKG_STORE/*.rpm
+	getCaplinFileFromAF BaxterCalendarAdapter ".zip"
+	cp -v $PKG_STORE/BaxterCalendarAdapter-$CAPLIN_VERSION.zip $CAPLIN_HOME/kits
+	$DFW deploy -f
+	echoInfo "Deactivating blades..."
+	for blade in MinimalLiberatorWebsite HTTPS ; do
+		$DFW deactivate "$blade"
+	done
+	echoInfo "Now activating blades..."
+	for blade in HTTP LiberatorWebsite ; do
+		$DFW activate "$blade"
+	done
+	deployToTomcat
+	configureCaplin
+	applyCaplinLicense
+	echoInfo "Changing the permissions on $CAPLIN_HOME..."
+	chown -R $CAPLIN_USER $CAPLIN_HOME
+	echoDebug "Caplin has been installed"
+}
+
+case "$1" in
+	start)
+		startCaplin
+		;;
+	stop)
+		stopCaplin
+		;;
+	restart)
+		stopCaplin
+		startCaplin
+		;;
+	status)
+		statusCaplin
+		;;
+	install)
+		stopCaplin
+		installCaplin
+		;;
+	*)
+		echoInfo "Usage: $(basename $0) start|stop|restart|status|install"
+		exit 3
+		;;
+esac
