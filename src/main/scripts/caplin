@@ -151,6 +151,9 @@ installCaplin() {
 	echoDebug "Caplin version: $CAPLIN_VERSION"
 	export CAPLIN_VERSION
 	cleanPackageCache
+	echoInfo "Force brutal Caplin remove..."
+	yum remove -y sgbm-caplin*
+	rm -fr $CAPLIN_HOME
 	getCaplinFileFromAF sgbm-caplin-adapters "-x86_64.rpm"
 	getCaplinFileFromAF sgbm-caplin-deploymentframework "-x86_64.rpm"
 	getCaplinFileFromAF sgbm-caplin-liberator "-x86_64.rpm"
