@@ -56,7 +56,7 @@ installTomcat() {
 	TOMCAT_HOME="$CAPLIN_GUI_CLNT/$TOMCAT_NAME"
 	if [ -d $TOMCAT_HOME ]; then
 		echoWarn "Tomcat directory $TOMCAT_HOME found. Cleaning it up..."
-		rm -frv $TOMCAT_HOME/webapps/santandertrader*
+		rm -fr $TOMCAT_HOME/webapps/santandertrader*
 		echoDebug "Tomcat has been cleaned" 
 	else
 		TOMCAT_TARGZ_FILE="$PKG_STORE/$TOMCAT_TARGZ"
@@ -89,8 +89,8 @@ latestCaplinVersionInAF() {
 
 cleanPackageCache() {
 	echoInfo "Cleaning old cache..."
-	for r in $(ls  $PKG_STORE/*.* | grep -v "$CAPLIN_VERSION" -v "apache-tomcat"); do
-		rm -fv $r
+	for r in $(ls  $PKG_STORE | grep -v "$CAPLIN_VERSION" | grep -v "apache-tomcat"); do
+		rm -fr $PKG_STORE/$r
 	done
 }
 
@@ -107,8 +107,8 @@ getCaplinFileFromAF() {
 deployToTomcat() {
 	echoInfo "Deploying Tomcat configuration..."
 	getCaplinFileFromAF santandertrader-dev-conf ".tar.gz"
-	rm -frv $PKG_STORE/santandertrader-dev-conf
-	tar vxzf $PKG_STORE/santandertrader-dev-conf-$CAPLIN_VERSION.tar.gz -C $PKG_STORE
+	rm -fr $PKG_STORE/santandertrader-dev-conf
+	tar xzf $PKG_STORE/santandertrader-dev-conf-$CAPLIN_VERSION.tar.gz -C $PKG_STORE
 	cp -frv $PKG_STORE/santandertrader-dev-conf/tomcat/* $TOMCAT_HOME/conf
 	TOMCAT_SAN_XML="$TOMCAT_HOME/conf/Catalina/localhost/santandertrader.xml"
 	echoWarn "Some abracadabra around the $TOMCAT_SAN_XML..."
@@ -119,9 +119,9 @@ deployToTomcat() {
 	done
 	echoInfo "Deploying WAR..."
 	getCaplinFileFromAF santandertrader-war ".tar.gz"
-	rm -frv $PKG_STORE/santandertrader-war
-	tar vxzf $PKG_STORE/santandertrader-war-$CAPLIN_VERSION.tar.gz -C $PKG_STORE
-	cp -frv $PKG_STORE/santandertrader-war/* $TOMCAT_HOME/webapps
+	rm -fr $PKG_STORE/santandertrader-war
+	tar xzf $PKG_STORE/santandertrader-war-$CAPLIN_VERSION.tar.gz -C $PKG_STORE
+	cp -fr $PKG_STORE/santandertrader-war/* $TOMCAT_HOME/webapps
 }
 
 configureCaplin() {
@@ -130,17 +130,11 @@ configureCaplin() {
 	$DFW java "$(find $(cd $(dirname $(readlink -f $(which java)))/..;pwd) -name libjvm.so)"
 }
 
-applyCaplinLicense() {
-	CAPLIN_LIC_DIR="$CAPLIN_HOME/global_config/licenses"
-	echoInfo "Applying the licenses to $CAPLIN_LIC_DIR ..."
-	LICENSE_TARGZ="$PKG_STORE/license.tar.gz"
-	rm -f $LICENSE_TARGZ
-	artifactory-download "caplin-releases/com/caplin/caplin-license.tar.gz" > $LICENSE_TARGZ
-	if [ ! -d $CAPLIN_LIC_DIR ]; then
-		echoDebug "Creating Caplin licenses directory $CAPLIN_LIC_DIR..."
-		mkdir -p $CAPLIN_LIC_DIR
-	fi
-	tar vxzf $LICENSE_TARGZ -C $CAPLIN_LIC_DIR
+installLicense() {
+	echoInfo "Applying the license for $1 ..."
+	VER="$($DFW versions | grep "$1 " | sed "s/\s\+$1\s\+\(.*\)/\1/g" | cut -d. -f1,2)"
+	echoDebug "Downloading the $1 license v. $VER (as $2)..."
+	artifactory-download "caplin-releases/com/caplin/license/$VER/$2" > $CAPLIN_HOME/global_config/licenses/$2
 }
 
 installCaplin() {
@@ -163,7 +157,7 @@ installCaplin() {
 	echoInfo "Installing Caplin packages..."
 	yum install -y $PKG_STORE/*.rpm
 	getCaplinFileFromAF BaxterCalendarAdapter ".zip"
-	cp -v $PKG_STORE/BaxterCalendarAdapter-$CAPLIN_VERSION.zip $CAPLIN_HOME/kits
+	cp $PKG_STORE/BaxterCalendarAdapter-$CAPLIN_VERSION.zip $CAPLIN_HOME/kits
 	$DFW deploy -f
 	echoInfo "Deactivating blades..."
 	for blade in MinimalLiberatorWebsite HTTPS ; do
@@ -175,7 +169,8 @@ installCaplin() {
 	done
 	deployToTomcat
 	configureCaplin
-	applyCaplinLicense
+	installLicense "Liberator" "license-rttpd.conf"
+	installLicense "Transformer" "license-transformer.conf"
 	echoInfo "Changing the permissions on $CAPLIN_HOME..."
 	chown -R $CAPLIN_USER $CAPLIN_HOME
 	echoDebug "Caplin has been installed"
