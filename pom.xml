@@ -6,7 +6,7 @@
 
 	<groupId>com.baxter.caplin</groupId>
 	<artifactId>caplin-wrapper</artifactId>
-	<version>1.3-SNAPSHOT</version>
+	<version>1.4-SNAPSHOT</version>
 
 	<name>Caplin Wrapper</name>
 	<description>The Wrapper around Caplin components</description>
