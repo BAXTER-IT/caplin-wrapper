@@ -2,6 +2,7 @@
 
 CAPLIN_HOME="/opt/caplin"
 TOMCAT_LINK="/opt/caplin-tomcat"
+WEBCENTRIC_PATH="$TOMCAT_LINK/webcentric-db"
 CAPLIN_GUI_CLNT="/opt/caplin-gui-client"
 PKG_STORE="/opt/caplin-pkgs"
 
@@ -26,7 +27,9 @@ echoWarn() {
 startCaplin() {
 	echoInfo "Starting the Caplin..."
 	$DFW start
-	$TOMCAT_LINK/bin/startup.sh
+	pushd $TOMCAT_LINK/bin
+	./startup.sh
+	popd
 	echoDebug "Caplin has been started"
 }
 
@@ -74,11 +77,16 @@ installTomcat() {
 		echoDebug "Creating Tomcat link at $TOMCAT_LINK..."  
 		ln -sv $TOMCAT_HOME $TOMCAT_LINK
 	fi
+	if [ ! -d $WEBCENTRIC_PATH ]; then
+		echoDebug "Creating webcentric directory..."
+		mkdir $WEBCENTRIC_PATH
+	fi
 }
 
 latestCaplinVersionInAF() {
-	artifactory-info "$AF_CAPLIN_SAN/sgbm-caplin-adapters" | grep '"uri"' | sort -r | while read ll; do
-		VERSION="$(echo $ll | cut -d: -f2,3 | cut -d\" -f2 | cut -d/ -f2)" # This is an artifactId?
+	artifactory-info "$AF_CAPLIN_SAN/sgbm-caplin-adapters" | grep '"uri"' | sort -t- -k 1,1Vr -k 2,2gr | while read ll; do
+		VERSION="$(echo $ll | cut -d: -f2,3 | cut -d\" -f2 | cut -d/ -f2)" 
+		# Is this an artifactId?
 		if [[ "$VERSION" =~ ^([0-9]+(\.[0-9]+)*)-[0-9]+$ ]]; then
 			echo "$VERSION"
 			return 0
@@ -117,11 +125,23 @@ deployToTomcat() {
 		echoDebug "Replacing $ADDR with $MYADDR"
 		sed -i "s/$ADDR/$MYADDR/g" $TOMCAT_SAN_XML  
 	done
+	echoInfo "Adding AAT users..."
+	TOMCAT_USERS="$TOMCAT_HOME/conf/tomcat-users.xml"
+	NEW_TOMCAT_USERS="$(mktemp)"
+	for usr in fm mv ps ; do
+		xmlstarlet tr /var/local/caplin/add-tomcat-user.xsl -s COMPANY=caplin -s USER=$usr -s PASSWORD=password $TOMCAT_USERS > $NEW_TOMCAT_USERS
+		mv $NEW_TOMCAT_USERS $TOMCAT_USERS
+	done
 	echoInfo "Deploying WAR..."
 	getCaplinFileFromAF santandertrader-war ".tar.gz"
 	rm -fr $PKG_STORE/santandertrader-war
 	tar xzf $PKG_STORE/santandertrader-war-$CAPLIN_VERSION.tar.gz -C $PKG_STORE
 	cp -fr $PKG_STORE/santandertrader-war/* $TOMCAT_HOME/webapps
+	echoInfo "Deploying Webcentric DB..."
+	getCaplinFileFromAF santandertrader-webcentric-db ".tar.gz"
+	rm -fr $PKG_STORE/santandertrader-webcentric-db
+	tar xzf $PKG_STORE/santandertrader-webcentric-db-$CAPLIN_VERSION.tar.gz -C $PKG_STORE
+	cp -fr $PKG_STORE/santandertrader-webcentric-db/* $WEBCENTRIC_PATH
 }
 
 configureCaplin() {
@@ -163,7 +183,7 @@ installCaplin() {
 	cp $PKG_STORE/BaxterCalendarAdapter-$CAPLIN_VERSION.zip $CAPLIN_HOME/kits
 	$DFW deploy -f
 	echoInfo "Deactivating blades..."
-	for blade in MinimalLiberatorWebsite HTTPS ; do
+	for blade in MinimalLiberatorWebsite HTTPS CerebroCalendarAdapter ; do
 		$DFW deactivate "$blade"
 	done
 	echoInfo "Now activating blades..."
@@ -176,6 +196,8 @@ installCaplin() {
 	installLicense "Transformer" "license-transformer.conf"
 	echoInfo "Changing the permissions on $CAPLIN_HOME..."
 	chown -R $CAPLIN_USER $CAPLIN_HOME
+	echoInfo "Changing the permissions on $WEBCENTRIC_PATH..."
+	chown -R $CAPLIN_USER $WEBCENTRIC_PATH
 	echoDebug "Caplin has been installed"
 }
 

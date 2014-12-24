@@ -148,6 +148,8 @@
 									<require>curl</require>
 									<require>sed</require>
 									<require>tar</require>
+									<require>xmlstarlet</require>
+									<require>mktemp</require>
 								</requires>
 								<provides>
 									<provide>${unix.package.name}</provide>
@@ -198,6 +200,16 @@
 												</source>
 											</sources>
 										</mapping>
+										<mapping>
+											<directory>${std.res.dir}</directory>
+											<filemode>644</filemode>
+											<sources>
+												<source>
+													<location>${basedir}/src/main/stylesheets/</location>
+													<filter>false</filter>
+												</source>
+											</sources>
+										</mapping>
 									</mappings>
 								</configuration>
 							</execution>
@@ -208,6 +220,7 @@
 			<properties>
 				<rpm-control.dir>${project.build.directory}/rpm-control</rpm-control.dir>
 				<std.bin.dir>/usr/bin</std.bin.dir>
+				<std.res.dir>/var/local/caplin</std.res.dir>
 			</properties>
 		</profile>
 
