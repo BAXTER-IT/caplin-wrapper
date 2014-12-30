@@ -118,6 +118,7 @@ deployToTomcat() {
 	rm -fr $PKG_STORE/santandertrader-dev-conf
 	tar xzf $PKG_STORE/santandertrader-dev-conf-$CAPLIN_VERSION.tar.gz -C $PKG_STORE
 	cp -frv $PKG_STORE/santandertrader-dev-conf/tomcat/* $TOMCAT_HOME/conf
+	rm -f $TOMCAT_HOME/conf/Catalina/localhost/santandertrader-orders.xml
 	TOMCAT_SAN_XML="$TOMCAT_HOME/conf/Catalina/localhost/santandertrader.xml"
 	echoWarn "Some abracadabra around the $TOMCAT_SAN_XML..."
 	MYADDR="$(hostname --ip-address)"
