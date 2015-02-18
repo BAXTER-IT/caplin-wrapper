@@ -9,7 +9,7 @@
 	<version>1.4-SNAPSHOT</version>
 
 	<name>Caplin Wrapper</name>
-	<description>The Wrapper around Caplin components</description>
+	<description>The Wrapper for Caplin components</description>
 
 	<url>https://github.com/BAXTER-IT/caplin-wrapper</url>
 
